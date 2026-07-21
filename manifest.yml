@@ -1,0 +1,107 @@
+plugin:
+  name: custom-data-type-iucn
+  version: "1"
+  url: https://github.com/programmfabrik/fylr-plugin-custom-data-type-iucn
+  l10n: l10n/custom-data-type-iucn.csv
+  displayname:
+    en-US: "Custom Data Type: IUCN"
+    de-DE: "Custom Data Type: IUCN"
+  info:
+    de-DE: |
+      Ein Feldtyp (Custom Data Type), mit dem sich Datensätze mit der [Roten Liste gefährdeter Arten der IUCN](https://www.iucnredlist.org/) verknüpfen lassen. Redakteure durchsuchen die IUCN-Datenbank direkt im Editor und speichern einen Verweis, den ein Hintergrundprozess aktuell hält.
+
+      - Suche über die SIS-ID oder den wissenschaftlichen Namen (Gattung und Art, z. B. "Canis lupus")
+      - Ein Updater aktualisiert verknüpfte Einträge bei Änderungen der Roten Liste
+      - Optional wird ein konfigurierbares "Rote-Liste"-Tag automatisch gesetzt oder entfernt, je nachdem ob die Art aktuell gelistet ist
+    en-US: |
+      A custom data type for linking records to the [IUCN Red List of Threatened Species](https://www.iucnredlist.org/). Editors search the IUCN database from the record editor and store a reference that a background process keeps in sync.
+
+      - Search by SIS ID or by scientific name (genus and species, e.g. "Canis lupus")
+      - An updater refreshes linked entries as the Red List changes
+      - Can automatically add or remove a configurable "Red List" tag on records whose species is currently listed
+  webfrontend:
+    url: custom-data-type-iucn.js
+    css: custom-data-type-iucn.css
+    logo: image/logo.png
+    l10n: l10n/
+
+base_url_prefix: "webfrontend"
+
+extensions:
+
+  # The webfrontend searches the IUCN API through this endpoint. The API token
+  # stays on the server.
+  # endpoint: <fylr url>/api/v1/plugin/extension/custom-data-type-iucn/proxy_api_v4
+  proxy_api_v4:
+    exec:
+      service: "python3"
+      commands:
+        - prog: "python3"
+          stdin:
+            type: "body"
+          stdout:
+            type: "body"
+          args:
+            - type: "value"
+              value: "%_exec.pluginDir%/server/extension/proxy_api_v4.py"
+            - type: "value"
+              value: "%info.json%"
+
+custom_types:
+  iucn:
+    mapping:
+      idTaxon:
+        type: text_oneline
+      scientificName:
+        type: text
+      mainCommonName:
+        type: text
+    update:
+      # the updater sets tags on records, so it runs as root
+      plugin_user:
+        reference: system:root
+      exec:
+        service: "node"
+        commands:
+          - prog: "node"
+            stdin:
+              type: "body"
+            stdout:
+              type: "body"
+            args:
+              - type: "value"
+                value: "%_exec.pluginDir%/server/updater/update.js"
+              - type: "value"
+                value: "%info.json%"
+      # The IUCN API allows 120 requests per minute and the updater needs two
+      # requests per entry. One batch of 100 entries takes about 100 seconds.
+      timeout: 600
+      batch_size: 100
+      expires_days: 1
+
+base_config:
+  - name: iucn_api_settings
+    group: iucn
+    parameters:
+      api_url:
+        type: text
+        default: "https://api.iucnredlist.org/api/v4"
+        position: 0
+      api_token:
+        type: text
+        position: 1
+  - name: iucn_settings
+    group: iucn
+    parameters:
+      tag_red:
+        type: int
+        position: 0
+        plugin_type: "iucn_tag"
+      iucn_fields:
+        type: table
+        position: 1
+        fields:
+          - name: iucn_field_name
+            type: text
+            position: 0
+            plugin_type: "iucn_field_name"

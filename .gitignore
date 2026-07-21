@@ -1,0 +1,5 @@
+/build
+*.coffee.js
+webfrontend/custom-data-type-iucn.js
+.DS_Store
+__pycache__/
