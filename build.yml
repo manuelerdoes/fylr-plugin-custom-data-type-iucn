@@ -9,12 +9,14 @@ server:
     - l10n
 
 webfrontend:
-  # CoffeeScript 1.x, compiled + concatenated in this order into
-  # plugin.webfrontend.url (webfrontend/custom-data-type-iucn.js)
-  coffee1:
-    - webfrontend/IUCNUtil.coffee
-    - webfrontend/CustomDataTypeIUCN.coffee
-    - webfrontend/CustomBaseConfigIUCN.coffee
+  # assembled into plugin.webfrontend.url, in this order:
+  # .coffee is compiled (CoffeeScript 1.x), .scss compiled,
+  # anything else taken verbatim
+  bundles:
+    - sources:
+        - webfrontend/IUCNUtil.coffee
+        - webfrontend/CustomDataTypeIUCN.coffee
+        - webfrontend/CustomBaseConfigIUCN.coffee
   scss:
     - webfrontend/custom-data-type-iucn.scss
   # the webfrontend loads its loca as per-culture JSONs, generated from the CSV
