@@ -6,6 +6,7 @@
 
 import json
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -32,6 +33,10 @@ def parse_api_settings(api_settings: dict) -> tuple[str, str]:
 
 
 def perform_get_request(api_url: str, api_path: str, api_token: str) -> dict:
+    # seconds to wait on consecutive 429 answers. longer waits would exceed the extension timeout
+    retry_waits = [5, 10]
+    attempt = 0
+
     request = urllib.request.Request(
         url=f'{api_url}/{api_path}',
         headers={
@@ -39,15 +44,20 @@ def perform_get_request(api_url: str, api_path: str, api_token: str) -> dict:
         },
     )
 
-    try:
-        with urllib.request.urlopen(request) as response:
-            return json.loads(response.read().decode('utf-8'))
-    except urllib.error.HTTPError as e:
-        # when a search finds no result, the API v4 answers with 404
-        if e.code == 404:
-            return {}
-        raise Exception(f'HTTP status code: {e.code}, text: {e.read().decode("utf-8")}')
-
+    while True:
+        try:
+            with urllib.request.urlopen(request) as response:
+                return json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            # when a search finds no result, the API v4 answers with 404
+            if e.code == 404:
+                return {}
+            # rate limited — wait and retry up to len(retry_waits) times
+            if e.code == 429 and attempt < len(retry_waits):
+                time.sleep(retry_waits[attempt])
+                attempt += 1
+                continue
+            raise Exception(f'HTTP status code: {e.code}, text: {e.read().decode("utf-8")}')
 
 def main() -> None:
     if len(sys.argv) < 2:
