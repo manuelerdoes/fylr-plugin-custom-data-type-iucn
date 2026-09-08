@@ -41,8 +41,13 @@ def perform_get_request(api_url: str, api_path: str, api_token: str) -> dict:
         url=f'{api_url}/{api_path}',
         headers={
             'Authorization': api_token,
+            # the IUCN API is behind Cloudflare, which answers "error code: 1010"
+            # to the default urllib user agent
+            'User-Agent': 'fylr-plugin-custom-data-type-iucn',
+            'Accept': 'application/json',
         },
     )
+
 
     while True:
         try:
