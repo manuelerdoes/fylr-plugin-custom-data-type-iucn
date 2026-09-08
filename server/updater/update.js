@@ -17,9 +17,10 @@ const LINK_FIELD_SEPARATOR = ":__link:"
 // categories that put a species on the red list
 const RED_LIST_CATEGORIES = ["EX", "EW", "CR", "EN", "VU"]
 
-// The IUCN API allows 120 requests per minute. The updater needs two requests
-// per entry, so it waits until an entry took at least this long.
-const MIN_ENTRY_DURATION_MS = 1000
+// The IUCN API allows 120 requests per minute. The updater needs one request
+// per entry, so it waits until an entry took at least this long. 600ms is
+// 100 requests per minute, which keeps headroom below the limit.
+const MIN_ENTRY_DURATION_MS = 600
 
 // page size of the searches for records to tag
 const SEARCH_LIMIT = 1000
@@ -106,57 +107,56 @@ class IUCNApi {
             "/taxa/scientific_name?genus_name=" + encodeURIComponent(genus) + "&species_name=" + encodeURIComponent(species)
         )
     }
-
-    getAssessment(assessmentId) {
-        return this.get("/assessment/" + encodeURIComponent(assessmentId))
-    }
 }
 
-// Returns the id of the latest assessment of a search result, 0 if there is
-// none.
-function getLatestAssessmentId(data) {
+// Returns the latest assessment of a taxon result, null if there is none.
+function getLatestAssessment(data) {
     if (!data || !Array.isArray(data.assessments)) {
-        return 0
+        return null
     }
     for (const assessment of data.assessments) {
-        if (assessment.latest && assessment.assessment_id) {
-            return assessment.assessment_id
+        if (assessment.latest) {
+            return assessment
         }
     }
-    return 0
+    return null
 }
 
-// Builds the custom data of an entry from an assessment.
-function toObjectData(assessment) {
-    if (Array.isArray(assessment)) {
-        assessment = assessment[0]
+// Builds the custom data of an entry from a taxon result.
+function toObjectData(result) {
+    if (Array.isArray(result)) {
+        result = result[0]
     }
 
     const data = {
         idTaxon: undefined,
-        scientificName: assessment.scientific_name || "",
+        scientificName: "",
         mainCommonName: "",
         category: "",
         redList: false,
     }
 
-    if (!assessment.sis_taxon_id) {
+    // /taxa/sis/{id} has sis_id at the top level, /taxa/scientific_name has it
+    // only inside taxon
+    const sisId = result && (result.sis_id || (result.taxon && result.taxon.sis_id))
+    if (!sisId) {
         return data
     }
-    data.idTaxon = `${assessment.sis_taxon_id}`
+    data.idTaxon = `${sisId}`
 
-    if (!assessment.taxon) {
+    if (!result.taxon) {
         return data
     }
-    data.scientificName = assessment.taxon.scientific_name || ""
+    data.scientificName = result.taxon.scientific_name || ""
 
-    if (assessment.red_list_category && assessment.red_list_category.code) {
-        data.category = assessment.red_list_category.code
+    const latest = getLatestAssessment(result)
+    if (latest && latest.red_list_category_code) {
+        data.category = latest.red_list_category_code
         data.redList = RED_LIST_CATEGORIES.includes(data.category)
     }
 
-    if (Array.isArray(assessment.taxon.common_names)) {
-        for (const name of assessment.taxon.common_names) {
+    if (Array.isArray(result.taxon.common_names)) {
+        for (const name of result.taxon.common_names) {
             if (name.main && name.name) {
                 data.mainCommonName = name.name
                 break
@@ -257,17 +257,11 @@ async function lookupEntry(iucn, data) {
         return null
     }
 
-    const assessmentId = getLatestAssessmentId(result)
-    if (!assessmentId) {
+    if (!getLatestAssessment(result)) {
         return null
     }
 
-    const assessment = await iucn.getAssessment(assessmentId)
-    if (!assessment || Object.keys(assessment).length === 0) {
-        return null
-    }
-
-    return toObjectData(assessment)
+    return toObjectData(result)
 }
 
 // Splits the configured IUCN fields into direct fields and fields that are

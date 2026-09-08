@@ -73,8 +73,8 @@ custom_types:
                 value: "%_exec.pluginDir%/server/updater/update.js"
               - type: "value"
                 value: "%info.json%"
-      # The IUCN API allows 120 requests per minute and the updater needs two
-      # requests per entry. One batch of 100 entries takes about 100 seconds.
+      # The IUCN API allows 120 requests per minute and the updater needs one
+      # request per entry. One batch of 100 entries takes about 60 seconds.
       timeout: 600
       batch_size: 100
       expires_days: 1
