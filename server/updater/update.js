@@ -336,11 +336,15 @@ async function searchAll(fylr, objecttypes, fields, values, handle) {
     }
 }
 
-// Tags all records that use the entry, either directly or through a linked
-// object.
-async function updateTagsOfEntry(fylr, data, config) {
+// Tags all records that use one of the entries, either directly or through a
+// linked object. All entries must have the same red list state.
+async function updateTagsOfEntries(fylr, taxonIds, redList, config) {
+    if (taxonIds.length === 0) {
+        return
+    }
+
     const tagBodies = []
-    if (data.redList) {
+    if (redList) {
         tagBodies.push({
             _mask: "_all_fields",
             _comment: "IUCN UPDATE - ADD TAG",
@@ -357,14 +361,14 @@ async function updateTagsOfEntry(fylr, data, config) {
     }
 
     // records that hold the entry in a field of their own
-    await searchAll(fylr, objecttypesOf(config.fields), config.fields, [data.idTaxon], (objects) =>
+    await searchAll(fylr, objecttypesOf(config.fields), config.fields, taxonIds, (objects) =>
         tagObjects(fylr, objects, tagBodies)
     )
 
     // records that hold the entry in a linked object
     const linkFields = config.linkedFields.map((field) => field.field)
     const linkedFields = config.linkedFields.map((field) => field.linked_field + "._global_object_id")
-    await searchAll(fylr, objecttypesOf(linkFields), linkFields, [data.idTaxon], async (objects) => {
+    await searchAll(fylr, objecttypesOf(linkFields), linkFields, taxonIds, async (objects) => {
         const globalObjectIds = objects.map((object) => object._global_object_id)
         await searchAll(fylr, objecttypesOf(linkedFields), linkedFields, globalObjectIds, (linkedObjects) =>
             tagObjects(fylr, linkedObjects, tagBodies)
@@ -427,16 +431,30 @@ async function update(payload, info, log) {
         object.data._expires_at = expiresAt(intervalDays)
         updated.push(object)
 
-        if (tagConfig && object.data.idTaxon) {
-            await updateTagsOfEntry(fylr, object.data, tagConfig)
-        }
-
         const elapsed = Date.now() - startTime
         if (elapsed < MIN_ENTRY_DURATION_MS) {
             await wait(MIN_ENTRY_DURATION_MS - elapsed)
         }
     }
 
+    if (tagConfig) {
+        // One search and one tag update per group, instead of one per entry.
+        const redListIds = []
+        const notRedListIds = []
+        for (const object of updated) {
+            if (!object.data.idTaxon) {
+                continue
+            }
+            if (object.data.redList) {
+                redListIds.push(object.data.idTaxon)
+            } else {
+                notRedListIds.push(object.data.idTaxon)
+            }
+        }
+        await updateTagsOfEntries(fylr, redListIds, true, tagConfig)
+        await updateTagsOfEntries(fylr, notRedListIds, false, tagConfig)
+    }
+    
     log.push(`${updated.length} entries updated`)
     return { payload: updated }
 }
