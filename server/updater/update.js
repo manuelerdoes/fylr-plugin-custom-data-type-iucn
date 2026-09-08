@@ -25,6 +25,14 @@ const MIN_ENTRY_DURATION_MS = 600
 // page size of the searches for records to tag
 const SEARCH_LIMIT = 1000
 
+// Entries are checked again after this many days when the base config does not
+// configure an interval.
+const DEFAULT_UPDATE_INTERVAL_DAYS = 90
+
+// Expiry is spread over this many extra days so that entries which were
+// updated together do not all expire on the same day.
+const EXPIRY_JITTER_DAYS = 6
+
 // ----------------------------------------------------------------- transport
 
 // Performs a request and returns the parsed JSON body.
@@ -377,11 +385,30 @@ function getTagConfig(settings) {
     return { idTagRed: settings.tag_red, fields, linkedFields }
 }
 
+// Returns the configured number of days between the updates of an entry.
+function getUpdateIntervalDays(config) {
+    const interval = config.update_interval_iucn
+    const days = interval && interval.days
+    if (typeof days === "number" && days > 0) {
+        return days
+    }
+    return DEFAULT_UPDATE_INTERVAL_DAYS
+}
+
+// Returns the date when an entry is checked again, spread over a few days so
+// that the entries do not all expire at once.
+function expiresAt(days) {
+    const date = new Date()
+    date.setDate(date.getDate() + days + Math.floor(Math.random() * EXPIRY_JITTER_DAYS))
+    return date.toISOString()
+}
+
 async function update(payload, info, log) {
     const config = pluginConfig(info)
     const iucn = new IUCNApi(config.iucn_api_settings)
     const fylr = new FylrApi(info)
     const tagConfig = getTagConfig(config.iucn_settings)
+    const intervalDays = getUpdateIntervalDays(config)
 
     const updated = []
 
@@ -397,6 +424,7 @@ async function update(payload, info, log) {
         } else {
             object.data = toSaveData(data)
         }
+        object.data._expires_at = expiresAt(intervalDays)
         updated.push(object)
 
         if (tagConfig && object.data.idTaxon) {
