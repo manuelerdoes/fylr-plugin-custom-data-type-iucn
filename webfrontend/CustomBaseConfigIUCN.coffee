@@ -1,9 +1,18 @@
 _collectionOptions = null
 
-# Loads the collection list once and caches it in _collectionOptions.
+# Loads the collection list and caches it. Returns the cached options once they
+# are there, and a promise while the request is running. CUI.Select accepts both
+# and shows a spinner while the promise is pending.
 loadCollectionOptions = ->
-	return if _collectionOptions isnt null
-	_collectionOptions = [] # mark as loading to prevent duplicate calls
+	return _collectionOptions if _collectionOptions
+
+	placeholder = ->
+		return [
+			text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
+			value: null
+		]
+
+	deferred = new CUI.Deferred()
 
 	xhr = new CUI.XHR
 		method: "GET"
@@ -13,17 +22,17 @@ loadCollectionOptions = ->
 			"x-easydb-token": ez5.session.token
 
 	xhr.start().done((data) ->
-		options = [
-			text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
-			value: null
-		]
+		options = placeholder()
 		flattenCollections(data.collections or data or [], options)
 		_collectionOptions = options
+		deferred.resolve(options)
 	).fail((e) ->
 		console.error("could not load the collection list:", e)
-		_collectionOptions = null # reset so it can be retried
+		# resolve with the placeholder, a rejected promise would leave the select empty
+		deferred.resolve(placeholder())
 	)
-	return
+
+	return deferred.promise()
 
 # The collection list is a tree. It is flattened into a single list of options,
 # the depth is shown as indentation.
@@ -71,16 +80,10 @@ class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 					options: options
 
 			when 'iucn_collection'
-				if not _collectionOptions
-					loadCollectionOptions()
-				options = _collectionOptions or [
-					text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
-					value: null
-				]
 				field =
 					type: CUI.Select
 					name: fieldName
-					options: options
+					options: -> loadCollectionOptions()
 		return field
 
 	# Search in all objecttypes using a 'filter' function.
