@@ -1,26 +1,38 @@
 _collectionOptions = null
 
-# Loads the collection list once and caches it. Returns the cached options when
-# they are there, and the pending request while it is still running, so that the
-# select can fill itself when the answer arrives.
+# Loads the collection list and caches it. Returns the cached options once they
+# are there, and a promise while the request is running. CUI.Select accepts both
+# and shows a spinner while the promise is pending.
 loadCollectionOptions = ->
 	return _collectionOptions if _collectionOptions
+
+	placeholder = ->
+		return [
+			text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
+			value: null
+		]
+
+	deferred = new CUI.Deferred()
 
 	xhr = new CUI.XHR
 		method: "GET"
 		url: "/api/v1/collection/list"
 		headers:
 			"authorization": "Bearer " + ez5.session.token
+			"x-easydb-token": ez5.session.token
 
-	return xhr.start().then((data) ->
-		options = [
-			text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
-			value: null
-		]
+	xhr.start().done((data) ->
+		options = placeholder()
 		flattenCollections(data.collections or data or [], options)
 		_collectionOptions = options
-		return options
+		deferred.resolve(options)
+	).fail((e) ->
+		console.error("could not load the collection list:", e)
+		# resolve with the placeholder, a rejected promise would leave the select empty
+		deferred.resolve(placeholder())
 	)
+
+	return deferred.promise()
 
 # The collection list is a tree. It is flattened into a single list of options,
 # the depth is shown as indentation.
