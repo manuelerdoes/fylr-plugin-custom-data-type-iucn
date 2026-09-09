@@ -1,3 +1,47 @@
+_collectionOptions = null
+
+# Loads the collection list once and caches it in _collectionOptions.
+loadCollectionOptions = ->
+	return if _collectionOptions isnt null
+	_collectionOptions = [] # mark as loading to prevent duplicate calls
+
+	xhr = new CUI.XHR
+		method: "GET"
+		url: "/api/v1/collection/list"
+		headers:
+			"authorization": "Bearer " + ez5.session.token
+			"x-easydb-token": ez5.session.token
+
+	xhr.start().done((data) ->
+		options = [
+			text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
+			value: null
+		]
+		flattenCollections(data.collections or data or [], options)
+		_collectionOptions = options
+	).fail((e) ->
+		console.error("could not load the collection list:", e)
+		_collectionOptions = null # reset so it can be retried
+	)
+	return
+
+# The collection list is a tree. It is flattened into a single list of options,
+# the depth is shown as indentation.
+flattenCollections = (collections, options, depth = 0) ->
+	return unless CUI.util.isArray(collections)
+	for coll in collections
+		c = coll.collection
+		continue unless c
+		dn = c.displayname or {}
+		# skip the personal top level folder that exists once per user
+		continue if Object.values(dn).some((v) -> v is "User Top Level")
+		name = dn["de-DE"] or dn["en-US"] or dn["mul-MUL"] or ("Collection " + c._id)
+		indent = "  ".repeat(depth)
+		options.push(text: indent + name, value: c._id)
+		flattenCollections(coll.children or [], options, depth + 1)
+	return
+
+
 class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 
 	getFieldDefFromParm: (baseConfig, fieldName, def) ->
@@ -21,6 +65,18 @@ class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 			when 'iucn_field_name'
 				options = @__searchInAllObjecttypes()
 
+				field =
+					type: CUI.Select
+					name: fieldName
+					options: options
+
+			when 'iucn_collection'
+				if not _collectionOptions
+					loadCollectionOptions()
+				options = _collectionOptions or [
+					text: $$("server.config.parameter.system.iucn_settings.collection.placeholder")
+					value: null
+				]
 				field =
 					type: CUI.Select
 					name: fieldName
