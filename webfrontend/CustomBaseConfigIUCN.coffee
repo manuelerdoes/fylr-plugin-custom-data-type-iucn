@@ -1,3 +1,47 @@
+_collectionOptions = null
+
+PLACEHOLDER = "server.config.parameter.system.iucn_settings.collection.placeholder"
+
+# The system collections have a displayname keyed "und" that holds a reference
+# like "collection.name.system:root". They are not worth showing in a label.
+isSystemCollectionName = (displayname) ->
+	und = (displayname or {}).und
+	return CUI.util.isString(und) and und.indexOf("collection.name.system:") == 0
+
+# _path holds the collection and its ancestors. The label is the chain of names
+# without the system collections on top of it, like the field selector shows it.
+collectionLabel = (row) ->
+	names = []
+	for entry in (row._path or [])
+		collection = entry.collection
+		continue unless collection
+		continue if isSystemCollectionName(collection.displayname)
+		name = ez5.loca.getBestFrontendValue(collection.displayname)
+		names.push(if CUI.util.isEmpty(name) then "#{collection._id}" else name)
+	if names.length == 0
+		return "#{row.collection._id}"
+	return names.join(" / ")
+
+# Loads the collection list and keeps it. The list is flat, the tree is in _path.
+loadCollectionOptions = ->
+	ez5.api.collection(api: "/list").done((data) ->
+		rows = data.collections or data.objects or data or []
+		options = [
+			text: $$(PLACEHOLDER)
+			value: null
+		]
+		for row in rows
+			collection = row?.collection
+			continue unless collection
+			continue if collection.is_system_collection
+			options.push(text: collectionLabel(row), value: collection._id)
+		_collectionOptions = options
+	).fail((e) ->
+		console.error("could not load the collection list:", e)
+	)
+	return
+
+
 class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 
 	getFieldDefFromParm: (baseConfig, fieldName, def) ->
@@ -21,6 +65,19 @@ class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 			when 'iucn_field_name'
 				options = @__searchInAllObjecttypes()
 
+				field =
+					type: CUI.Select
+					name: fieldName
+					options: options
+
+			when 'iucn_collection'
+				# the options have to be there synchronously, options that arrive
+				# later mark the base config as changed
+				options = _collectionOptions or [
+					text: $$(PLACEHOLDER)
+					value: null
+				]
+				loadCollectionOptions() # refresh for the next time the panel opens
 				field =
 					type: CUI.Select
 					name: fieldName
@@ -117,3 +174,4 @@ class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 
 ez5.session_ready =>
 	BaseConfig.registerPlugin(new ez5.CustomBaseConfigIUCN())
+	loadCollectionOptions()

@@ -248,6 +248,10 @@ class FylrApi {
         })
         return this.request("POST", `/api/v1/db/${objecttype}?format=short`, body)
     }
+
+    pushToCollection(collectionId, objects) {
+        return this.request("POST", `/api/v1/collection/push/${collectionId}`, { objects: objects })
+    }
 }
 
 // ------------------------------------------------------------------ updating
@@ -304,7 +308,9 @@ function objecttypesOf(fields) {
     return [...new Set(fields.map((field) => field.split(".")[0]))]
 }
 
-// Adds or removes the red list tag on the given records.
+// Adds or removes the red list tag on the given records. Returns the records
+// the tag edit changed: a record that already carries the right tag is not
+// written again and does not come back in the answer.
 async function tagObjects(fylr, objects, tagBodies) {
     const idsByObjecttype = {}
     for (const object of objects) {
@@ -315,9 +321,16 @@ async function tagObjects(fylr, objects, tagBodies) {
         idsByObjecttype[objecttype].push(object[objecttype]._id)
     }
 
+    const changed = []
     for (const [objecttype, ids] of Object.entries(idsByObjecttype)) {
-        await fylr.updateTags(objecttype, ids, tagBodies)
+        const answer = await fylr.updateTags(objecttype, ids, tagBodies)
+        for (const record of answer || []) {
+            if (record && record._global_object_id) {
+                changed.push({ _global_object_id: record._global_object_id })
+            }
+        }
     }
+    return changed
 }
 
 // Runs a search over all pages and calls handle with the found records.
@@ -340,8 +353,9 @@ async function searchAll(fylr, objecttypes, fields, values, handle) {
 }
 
 // Tags all records that use one of the entries, either directly or through a
-// linked object. All entries must have the same red list state.
-async function updateTagsOfEntries(fylr, taxonIds, redList, config) {
+// linked object. All entries must have the same red list state. The records
+// whose tag changed are pushed into the configured collection, when there is one.
+async function updateTagsOfEntries(fylr, taxonIds, redList, config, log) {
     if (taxonIds.length === 0) {
         return
     }
@@ -363,20 +377,31 @@ async function updateTagsOfEntries(fylr, taxonIds, redList, config) {
         })
     }
 
+    const changed = []
+    const tagAndCollect = async (objects) => {
+        changed.push(...(await tagObjects(fylr, objects, tagBodies)))
+    }
+
     // records that hold the entry in a field of their own
-    await searchAll(fylr, objecttypesOf(config.fields), config.fields, taxonIds, (objects) =>
-        tagObjects(fylr, objects, tagBodies)
-    )
+    await searchAll(fylr, objecttypesOf(config.fields), config.fields, taxonIds, tagAndCollect)
 
     // records that hold the entry in a linked object
     const linkFields = config.linkedFields.map((field) => field.field)
     const linkedFields = config.linkedFields.map((field) => field.linked_field + "._global_object_id")
     await searchAll(fylr, objecttypesOf(linkFields), linkFields, taxonIds, async (objects) => {
         const globalObjectIds = objects.map((object) => object._global_object_id)
-        await searchAll(fylr, objecttypesOf(linkedFields), linkedFields, globalObjectIds, (linkedObjects) =>
-            tagObjects(fylr, linkedObjects, tagBodies)
-        )
+        await searchAll(fylr, objecttypesOf(linkedFields), linkedFields, globalObjectIds, tagAndCollect)
     })
+
+    if (config.collectionId && changed.length > 0) {
+        try {
+            await fylr.pushToCollection(config.collectionId, changed)
+            log.push(`pushed ${changed.length} records into collection ${config.collectionId}`)
+        } catch (e) {
+            // a collection that cannot be written must not fail the whole batch
+            log.push(`could not push into collection ${config.collectionId}: ${e}`)
+        }
+    }
 }
 
 // Reads the tag configuration. Tagging is optional, so it returns null when
@@ -389,7 +414,12 @@ function getTagConfig(settings) {
     if (fields.length === 0 && linkedFields.length === 0) {
         return null
     }
-    return { idTagRed: settings.tag_red, fields, linkedFields }
+    return {
+        idTagRed: settings.tag_red,
+        fields,
+        linkedFields,
+        collectionId: settings.collection_id || null,
+    }
 }
 
 // Returns the configured number of days between the updates of an entry.
@@ -454,8 +484,10 @@ async function update(payload, info, log) {
                 notRedListIds.push(object.data.idTaxon)
             }
         }
-        await updateTagsOfEntries(fylr, redListIds, true, tagConfig)
-        await updateTagsOfEntries(fylr, notRedListIds, false, tagConfig)
+        // remove first: a record that links a listed and an unlisted species
+        // keeps its tag this way round
+        await updateTagsOfEntries(fylr, notRedListIds, false, tagConfig, log)
+        await updateTagsOfEntries(fylr, redListIds, true, tagConfig, log)
     }
     
     log.push(`${updated.length} entries updated`)
