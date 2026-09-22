@@ -236,6 +236,9 @@ class FylrApi {
         })
     }
 
+    // A group edit through the _all_fields mask: the plugin user is root, so
+    // the mask is always available. base_fields_only is not used, fylr 6.35
+    // rejects it together with a mask and 6.34 needs the mask.
     updateTags(objecttype, ids, tagBodies) {
         const body = tagBodies.map((tagBody) => {
             const update = Object.assign({}, tagBody)
@@ -243,7 +246,7 @@ class FylrApi {
             update[objecttype] = { _id: ids }
             return update
         })
-        return this.request("POST", `/api/v1/db/${objecttype}?base_fields_only=1&format=short`, body)
+        return this.request("POST", `/api/v1/db/${objecttype}?format=short`, body)
     }
 }
 
