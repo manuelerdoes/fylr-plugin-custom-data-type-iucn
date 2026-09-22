@@ -77,6 +77,8 @@ custom_types:
       # request per entry. One batch of 100 entries takes about 60 seconds.
       timeout: 600
       batch_size: 100
+      # only a fallback for entries the updater has not processed yet, it sets
+      # _expires_at on every entry it updates
       expires_days: 1
 
 base_config:
@@ -105,3 +107,11 @@ base_config:
             type: text
             position: 0
             plugin_type: "iucn_field_name"
+  - name: update_interval_iucn
+    group: update_custom_data_type
+    parameters:
+      days:
+        type: int
+        min: 1
+        default: 90
+        position: 0
