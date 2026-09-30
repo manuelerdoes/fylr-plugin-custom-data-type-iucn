@@ -31,11 +31,17 @@ The tag which is used as the "Red List" tag must be configured in the tag manage
 
 Multiple fields in different objecttypes can be selected under "Settings" -> "IUCN Fields". The plugin uses these fields to decide if the tag is added to a record or removed from it. Only fields of records with tag management enabled in the data model are available here.
 
+Optionally a collection can be selected under "Settings" -> "Collection". The updater pushes every record whose "Red List" tag it added or removed into this collection, so the changes of a run can be reviewed there. Records that already carry the right tag are not pushed.
+
 *Please note*: this feature is optional. Selecting a tag or fields is not necessary. Searching and displaying references to the IUCN repository is not affected by these settings.
 
 ### Updater
 
-The updater needs no configuration. fylr runs it in the background and updates each entry once per day.
+fylr runs the updater in the background. A new entry is checked on the next run. After that, an entry is checked again after the number of days set under "IUCN Updater" -> "Days between updates" (default: 90). The actual date is spread over a few extra days, so that entries which were updated together are not all checked on the same day.
+
+A record that uses a species which is already known shares the existing entry. It gets the "Red List" tag when that entry is checked the next time.
+
+*Please note*: with fylr versions before 6.35, the check date is part of the identity of an entry. Saving a record with a species that is already known can then create a second, identical entry. fylr 6.35 merges these entries.
 
 The updater runs as the user `system:root`. It needs these rights to add and remove the "Red List" tag on all records.
 
