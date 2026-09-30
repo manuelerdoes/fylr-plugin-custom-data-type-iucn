@@ -109,6 +109,10 @@ base_config:
             type: text
             position: 0
             plugin_type: "iucn_field_name"
+      collection_id:
+        type: int
+        position: 2
+        plugin_type: "iucn_collection"
   - name: update_interval_iucn
     group: update_custom_data_type
     parameters:
