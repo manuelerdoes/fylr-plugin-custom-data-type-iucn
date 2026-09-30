@@ -174,4 +174,6 @@ class ez5.CustomBaseConfigIUCN extends BaseConfigPlugin
 
 ez5.session_ready =>
 	BaseConfig.registerPlugin(new ez5.CustomBaseConfigIUCN())
-	loadCollectionOptions()
+	# only users who can open the base config need the list
+	if ez5.session.hasSystemRight("root", "config")
+		loadCollectionOptions()
